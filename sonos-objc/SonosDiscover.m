@@ -9,6 +9,9 @@
 #import "SonosDiscover.h"
 #import "XMLReader.h"
 #import "SonosController.h"
+#include <net/if.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
 
 typedef void (^findDevicesBlock)(NSArray *ipAddresses);
 
@@ -35,7 +38,8 @@ typedef void (^findDevicesBlock)(NSArray *ipAddresses);
                     NSHTTPURLResponse *hResponse = (NSHTTPURLResponse*)response;
                     if (hResponse.statusCode == 200){
                         NSDictionary *responseDictionary = [XMLReader dictionaryForXMLData:data error:&error];
-                        NSArray *inputDictionaryArray = responseDictionary[@"ZPSupportInfo"][@"ZonePlayers"][@"ZonePlayer"];
+                        id zonePlayers = responseDictionary[@"ZPSupportInfo"][@"ZonePlayers"][@"ZonePlayer"];
+                        NSArray *inputDictionaryArray = [zonePlayers isKindOfClass:[NSDictionary class]] ? @[ zonePlayers ] : zonePlayers;
                         
                         for (NSDictionary *dictionary in inputDictionaryArray){
                             NSString *name = dictionary[@"text"];
@@ -81,8 +85,9 @@ typedef void (^findDevicesBlock)(NSArray *ipAddresses);
         NSLog(@"Error enabling broadcast");
     }
     
-    NSString *str = @"M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp: discover\"\r\nMX: 3\r\nST: urn:schemas-upnp-org:device:ZonePlayer:1\r\n\r\n";
-    [self.udpSocket sendData:[str dataUsingEncoding:NSUTF8StringEncoding] toHost:@"239.255.255.250" port:1900 withTimeout:-1 tag:0];
+    NSString *broadcastAddress = [self broadcastAddress];
+    NSString *str = [NSString stringWithFormat:@"M-SEARCH * HTTP/1.1\r\nHOST: %@:1900\r\nMAN: \"ssdp: discover\"\r\nMX: 3\r\nST: urn:schemas-upnp-org:device:ZonePlayer:1\r\n\r\n", broadcastAddress];
+    [self.udpSocket sendData:[str dataUsingEncoding:NSUTF8StringEncoding] toHost:broadcastAddress port:1900 withTimeout:-1 tag:0];
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         [self stopDiscovery];
@@ -93,6 +98,33 @@ typedef void (^findDevicesBlock)(NSArray *ipAddresses);
     [self.udpSocket close];
     self.udpSocket = nil;
     self.completionBlock(self.ipAddressesArray);
+}
+
+// From http://stackoverflow.com/questions/6807788/how-to-get-ip-address-of-iphone-programatically
+- (NSString *)broadcastAddress {
+    NSString *address = @"error";
+    struct ifaddrs *interfaces = NULL;
+    struct ifaddrs *temp_addr = NULL;
+    int success = 0;
+    // retrieve the current interfaces - returns 0 on success
+    success = getifaddrs(&interfaces);
+    if (success == 0) {
+        // Loop through linked list of interfaces
+        temp_addr = interfaces;
+        while(temp_addr != NULL) {
+            if(temp_addr->ifa_addr->sa_family == AF_INET) {
+                // Check if interface is en0 which is the wifi connection on the iPhone
+                if([[NSString stringWithUTF8String:temp_addr->ifa_name] isEqualToString:@"en0"]) {
+                    // Get NSString from C String
+                    address = [NSString stringWithUTF8String:inet_ntoa(((struct sockaddr_in *)temp_addr->ifa_dstaddr)->sin_addr)];
+                }
+            }
+            temp_addr = temp_addr->ifa_next;
+        }
+    }
+    // Free memory
+    freeifaddrs(interfaces);
+    return address;
 }
 
 #pragma mark - GCDAsyncUdpSocketDelegate

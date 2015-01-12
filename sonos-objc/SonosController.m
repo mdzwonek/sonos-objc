@@ -153,13 +153,17 @@
     [self playbackStatus:^(BOOL playing, NSDictionary *response, NSError *error){
         if(playing)
             [self pause:^(NSDictionary *response, NSError *error){
-                if(error) block(NO, nil, error);
-                block(NO, response, nil);
+                if (block) {
+                    if(error) block(NO, nil, error);
+                    block(NO, response, nil);
+                }
             }];
         else
             [self play:nil completion:^(NSDictionary *response, NSError *error){
-                if(error) block(NO, nil, error);
-                block(YES, response, error);
+                if (block) {
+                    if(error) block(NO, nil, error);
+                    block(YES, response, error);
+                }
             }];
     }];
 }
@@ -292,7 +296,7 @@
      upnp:@"/MediaRenderer/RenderingControl/Control"
      soap_service:@"urn:schemas-upnp-org:service:RenderingControl:1"
      soap_action:@"SetVolume"
-     soap_arguments:[NSString stringWithFormat:@"<InstanceID>0</InstanceID><Channel>Master</Channel><DesiredVolume>%d</DesiredVolume>", volume]
+     soap_arguments:[NSString stringWithFormat:@"<InstanceID>0</InstanceID><Channel>Master</Channel><DesiredVolume>%ld</DesiredVolume>", (long)volume]
      completion:block];
 }
 
